@@ -48,14 +48,6 @@ INDICES_JP = [
         "fallback": None,
         "valid_range": (5000, 150000),
     },
-    {
-        "name": "TOPIX",
-        "ticker": "^TOPX",
-        # 1306.T(NEXT FUNDS TOPIX ETF)は株式分割で価格スケールが変わることがあるため、
-        # より指数に近い価格で連動する 1305.T(iFreeETF TOPIX 年1回決算型)を優先フォールバックにする
-        "fallback": "1305.T",
-        "valid_range": (500, 10000),
-    },
 ]
 INDICES_US = [
     {
@@ -142,13 +134,10 @@ def build_embed(group: str) -> dict:
 
     for i, index in enumerate(indices):
         data = fetch_index_data(index)
+        is_last = i == len(indices) - 1
 
         if data is None:
-            fields.append({
-                "name": index["name"],
-                "value": "データ取得に失敗しました",
-                "inline": False,
-            })
+            value = "データ取得に失敗しました"
         else:
             change = data["change"]
             change_pct = data["change_pct"]
@@ -157,13 +146,14 @@ def build_embed(group: str) -> dict:
                 change_str = f"{arrow} {change:+,.2f} ({change_pct:+.2f}%)"
             else:
                 change_str = "前日比データなし"
-
             value = f"**{data['close']:,.2f}**\n{change_str}\n({data['date']} 時点)"
-            fields.append({"name": index["name"], "value": value, "inline": False})
 
-        # 指数と指数の間に空行を1行入れる(最後の指数の後には入れない)
-        if i < len(indices) - 1:
-            fields.append({"name": "\u200b", "value": "\u200b", "inline": False})
+        # 指数と指数の間に軽く余白を入れる(フィールドを分けると余白が大きくなりすぎるため
+        # 同じフィールドの末尾に空行を1行追加するだけにする)
+        if not is_last:
+            value += "\n\u200b"
+
+        fields.append({"name": index["name"], "value": value, "inline": False})
 
     embed = {
         "title": f"📈 {title_label} ({today_str})",
