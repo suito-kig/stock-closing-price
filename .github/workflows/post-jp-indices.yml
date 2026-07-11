@@ -1,9 +1,10 @@
-name: Post JP Indices to Discord (Nikkei / TOPIX)
+name: Post JP Indices to Discord (Nikkei)
 
 on:
   schedule:
     # UTC 06:35 = JST 15:35(同日)
-    - cron: "35 6 * * *"
+    # 曜日指定(月〜金 = 1-5)で土日は実行しないようにしている
+    - cron: "35 6 * * 1-5"
   workflow_dispatch: {}  # Actionsタブから手動実行もできるようにする
 
 jobs:

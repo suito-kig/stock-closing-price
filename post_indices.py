@@ -163,6 +163,21 @@ def build_embed(group: str) -> dict:
     return embed
 
 
+def get_expected_trading_date(group: str):
+    """
+    このgroupの投稿が「新しい取引日のデータ」であるべき日付(YYYY-MM-DD)を返す。
+    祝日等でこの日付のデータがまだ無い場合は、投稿をスキップして重複投稿を防ぐために使う。
+    all(手動テスト用)の場合は None を返し、フレッシュさのチェックをスキップする。
+    """
+    if group == "jp":
+        # 日本市場は15:35 JST(市場クローズ後)に実行される想定なので、JSTの「今日」が取引日のはず
+        return datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    if group == "us":
+        # 米国市場は21:05 UTC(米国市場クローズ直後)に実行される想定なので、UTCの「今日」が取引日のはず
+        return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="株価指数の終値をDiscordに投稿する")
     parser.add_argument(
@@ -176,6 +191,19 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    expected_date = get_expected_trading_date(args.group)
+    if expected_date:
+        indices, _ = GROUP_MAP[args.group]
+        anchor_data = fetch_index_data(indices[0])
+        if anchor_data is None or anchor_data["date"] != expected_date:
+            logger.info(
+                "最新の取引日データがまだ無いため投稿をスキップします"
+                "(祝日などで市場が休みの可能性があります。期待日=%s, 取得日=%s)",
+                expected_date, anchor_data["date"] if anchor_data else None,
+            )
+            return
+
     embed = build_embed(args.group)
     payload = {"embeds": [embed]}
     resp = requests.post(WEBHOOK_URL, json=payload, timeout=30)
