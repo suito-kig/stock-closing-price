@@ -1,0 +1,28 @@
+name: Post Daily Indices to Discord
+
+on:
+  schedule:
+    # UTC 23:00 = JST 8:00(翌日)
+    # 投稿時刻を変更したい場合はここを書き換える(GitHub Actionsのcronは常にUTC)
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}  # Actionsタブから手動実行もできるようにする
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Post indices to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python post_indices.py
