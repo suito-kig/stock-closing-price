@@ -38,14 +38,38 @@ if not WEBHOOK_URL:
     sys.exit(1)
 
 # 投稿する指数と Yahoo Finance のティッカーシンボル
-# TOPIXが取得できない場合は 1306.T (TOPIX連動ETF) を自動でフォールバック
+# 各指数ごとに「ありえない値」を弾くための妥当範囲(min, max)も設定しておく。
+# これにより、ETFの株式分割などでフォールバック先の価格スケールが急変した場合でも
+# 誤った値をそのまま投稿してしまうことを防ぐ。
 INDICES_JP = [
-    {"name": "日経平均株価", "ticker": "^N225", "fallback": None},
-    {"name": "TOPIX", "ticker": "^TOPX", "fallback": "1306.T"},
+    {
+        "name": "日経平均株価",
+        "ticker": "^N225",
+        "fallback": None,
+        "valid_range": (5000, 150000),
+    },
+    {
+        "name": "TOPIX",
+        "ticker": "^TOPX",
+        # 1306.T(NEXT FUNDS TOPIX ETF)は株式分割で価格スケールが変わることがあるため、
+        # より指数に近い価格で連動する 1305.T(iFreeETF TOPIX 年1回決算型)を優先フォールバックにする
+        "fallback": "1305.T",
+        "valid_range": (500, 10000),
+    },
 ]
 INDICES_US = [
-    {"name": "NYダウ", "ticker": "^DJI", "fallback": None},
-    {"name": "NASDAQ総合指数", "ticker": "^IXIC", "fallback": None},
+    {
+        "name": "NYダウ",
+        "ticker": "^DJI",
+        "fallback": None,
+        "valid_range": (5000, 100000),
+    },
+    {
+        "name": "NASDAQ総合指数",
+        "ticker": "^IXIC",
+        "fallback": None,
+        "valid_range": (1000, 50000),
+    },
 ]
 INDICES_ALL = INDICES_JP + INDICES_US
 
@@ -86,19 +110,38 @@ def fetch_last_close(ticker: str):
         return None
 
 
+def fetch_index_data(index: dict):
+    """
+    ticker → (失敗すれば) fallback の順に取得を試み、valid_range から外れた値は
+    「取得失敗」として扱う(株式分割などでスケールがずれた値を誤投稿しないため)。
+    """
+    valid_range = index.get("valid_range")
+    candidates = [index["ticker"]]
+    if index.get("fallback"):
+        candidates.append(index["fallback"])
+
+    for ticker in candidates:
+        data = fetch_last_close(ticker)
+        if data is None:
+            continue
+        if valid_range and not (valid_range[0] <= data["close"] <= valid_range[1]):
+            logger.warning(
+                "%s の取得値 %.2f が妥当範囲 %s の外だったため無効とみなします",
+                ticker, data["close"], valid_range,
+            )
+            continue
+        return data
+
+    return None
+
+
 def build_embed(group: str) -> dict:
     indices, title_label = GROUP_MAP[group]
     today_str = datetime.datetime.now(JST).strftime("%Y年%m月%d日")
     fields = []
 
-    for index in indices:
-        data = fetch_last_close(index["ticker"])
-        if data is None and index["fallback"]:
-            logger.info(
-                "%s の取得に失敗したためフォールバック %s を使用します",
-                index["ticker"], index["fallback"],
-            )
-            data = fetch_last_close(index["fallback"])
+    for i, index in enumerate(indices):
+        data = fetch_index_data(index)
 
         if data is None:
             fields.append({
@@ -106,24 +149,26 @@ def build_embed(group: str) -> dict:
                 "value": "データ取得に失敗しました",
                 "inline": False,
             })
-            continue
-
-        change = data["change"]
-        change_pct = data["change_pct"]
-        if change is not None:
-            arrow = "🔺" if change > 0 else ("🔻" if change < 0 else "➖")
-            change_str = f"{arrow} {change:+,.2f} ({change_pct:+.2f}%)"
         else:
-            change_str = "前日比データなし"
+            change = data["change"]
+            change_pct = data["change_pct"]
+            if change is not None:
+                arrow = "🔺" if change > 0 else ("🔻" if change < 0 else "➖")
+                change_str = f"{arrow} {change:+,.2f} ({change_pct:+.2f}%)"
+            else:
+                change_str = "前日比データなし"
 
-        value = f"**{data['close']:,.2f}**\n{change_str}\n({data['date']} 時点)"
-        fields.append({"name": index["name"], "value": value, "inline": False})
+            value = f"**{data['close']:,.2f}**\n{change_str}\n({data['date']} 時点)"
+            fields.append({"name": index["name"], "value": value, "inline": False})
+
+        # 指数と指数の間に空行を1行入れる(最後の指数の後には入れない)
+        if i < len(indices) - 1:
+            fields.append({"name": "\u200b", "value": "\u200b", "inline": False})
 
     embed = {
         "title": f"📈 {title_label} ({today_str})",
         "color": 0x2ecc71,
         "fields": fields,
-        "footer": {"text": "データ提供: Yahoo Finance (yfinance) / GitHub Actions自動投稿"},
     }
     return embed
 
