@@ -1,10 +1,9 @@
-name: Post Daily Indices to Discord
+name: Post JP Indices to Discord (Nikkei / TOPIX)
 
 on:
   schedule:
-    # UTC 23:00 = JST 8:00(翌日)
-    # 投稿時刻を変更したい場合はここを書き換える(GitHub Actionsのcronは常にUTC)
-    - cron: "0 23 * * *"
+    # UTC 06:35 = JST 15:35(同日)
+    - cron: "35 6 * * *"
   workflow_dispatch: {}  # Actionsタブから手動実行もできるようにする
 
 jobs:
@@ -22,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Post indices to Discord
+      - name: Post JP indices to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python post_indices.py
+        run: python post_indices.py --group jp

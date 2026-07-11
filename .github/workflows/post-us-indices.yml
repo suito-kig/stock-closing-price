@@ -1,0 +1,27 @@
+name: Post US Indices to Discord (Dow / NASDAQ)
+
+on:
+  schedule:
+    # UTC 21:05(前日) = JST 06:05(当日)
+    - cron: "5 21 * * *"
+  workflow_dispatch: {}  # Actionsタブから手動実行もできるようにする
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Post US indices to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python post_indices.py --group us

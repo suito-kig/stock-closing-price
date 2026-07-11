@@ -1,9 +1,16 @@
 """
-株価指数(日経平均・TOPIX・NYダウ・NASDAQ)の終値を取得し、
-Discordの Webhook URL に1回だけ投稿して終了するスクリプト。
+株価指数の終値を取得し、Discordの Webhook URL に1回だけ投稿して終了するスクリプト。
 
 GitHub Actions の scheduled workflow から実行される想定。
 (常駐は行わない = discord.py のBotログインは不要)
+
+日本市場(日経平均・TOPIX)と米国市場(NYダウ・NASDAQ)は終値が確定する時刻が
+大きく異なるため、--group 引数でどちらを投稿するか指定できるようにしている。
+
+使い方:
+  python post_indices.py --group jp   # 日経平均・TOPIXのみ投稿
+  python post_indices.py --group us   # NYダウ・NASDAQのみ投稿
+  python post_indices.py --group all  # 全部まとめて投稿(デフォルト)
 
 必要な環境変数:
   DISCORD_WEBHOOK_URL - Discordチャンネルに作成したWebhookのURL
@@ -11,6 +18,7 @@ GitHub Actions の scheduled workflow から実行される想定。
 
 import os
 import sys
+import argparse
 import datetime
 import logging
 
@@ -31,12 +39,21 @@ if not WEBHOOK_URL:
 
 # 投稿する指数と Yahoo Finance のティッカーシンボル
 # TOPIXが取得できない場合は 1306.T (TOPIX連動ETF) を自動でフォールバック
-INDICES = [
+INDICES_JP = [
     {"name": "日経平均株価", "ticker": "^N225", "fallback": None},
     {"name": "TOPIX", "ticker": "^TOPX", "fallback": "1306.T"},
+]
+INDICES_US = [
     {"name": "NYダウ", "ticker": "^DJI", "fallback": None},
     {"name": "NASDAQ総合指数", "ticker": "^IXIC", "fallback": None},
 ]
+INDICES_ALL = INDICES_JP + INDICES_US
+
+GROUP_MAP = {
+    "jp": (INDICES_JP, "日本市場 終値速報"),
+    "us": (INDICES_US, "米国市場 終値速報"),
+    "all": (INDICES_ALL, "株価指数 終値速報"),
+}
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -69,11 +86,12 @@ def fetch_last_close(ticker: str):
         return None
 
 
-def build_embed() -> dict:
+def build_embed(group: str) -> dict:
+    indices, title_label = GROUP_MAP[group]
     today_str = datetime.datetime.now(JST).strftime("%Y年%m月%d日")
     fields = []
 
-    for index in INDICES:
+    for index in indices:
         data = fetch_last_close(index["ticker"])
         if data is None and index["fallback"]:
             logger.info(
@@ -102,7 +120,7 @@ def build_embed() -> dict:
         fields.append({"name": index["name"], "value": value, "inline": False})
 
     embed = {
-        "title": f"📈 株価指数 終値速報 ({today_str})",
+        "title": f"📈 {title_label} ({today_str})",
         "color": 0x2ecc71,
         "fields": fields,
         "footer": {"text": "データ提供: Yahoo Finance (yfinance) / GitHub Actions自動投稿"},
@@ -110,8 +128,20 @@ def build_embed() -> dict:
     return embed
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="株価指数の終値をDiscordに投稿する")
+    parser.add_argument(
+        "--group",
+        choices=["jp", "us", "all"],
+        default="all",
+        help="投稿する指数グループ (jp: 日経平均/TOPIX, us: NYダウ/NASDAQ, all: 全部)",
+    )
+    return parser.parse_args()
+
+
 def main():
-    embed = build_embed()
+    args = parse_args()
+    embed = build_embed(args.group)
     payload = {"embeds": [embed]}
     resp = requests.post(WEBHOOK_URL, json=payload, timeout=30)
 
@@ -119,7 +149,7 @@ def main():
         logger.error("Discordへの投稿に失敗しました: %s %s", resp.status_code, resp.text)
         sys.exit(1)
 
-    logger.info("指数情報を投稿しました。")
+    logger.info("指数情報を投稿しました。(group=%s)", args.group)
 
 
 if __name__ == "__main__":
