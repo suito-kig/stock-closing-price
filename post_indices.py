@@ -14,6 +14,8 @@ GitHub Actions の scheduled workflow から実行される想定。
 
 必要な環境変数:
   DISCORD_WEBHOOK_URL - Discordチャンネルに作成したWebhookのURL
+
+  :更新用行
 """
 
 import os
