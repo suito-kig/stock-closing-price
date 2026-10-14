@@ -26,3 +26,13 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python post_indices.py --group us
+
+  # GitHubはパブリックリポジトリに60日間動きがないとscheduledワークフローを自動停止する。
+  # それを防ぐため、定期実行のたびにAPI経由でこのワークフローを再有効化する(ダミーコミット不要)。
+  workflow-keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: liskin/gh-workflow-keepalive@v1
